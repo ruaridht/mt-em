@@ -17,15 +17,20 @@ First calculate the alignments using the alignment function.
 Self notes:
 Run using tw (or tweet) to be tweeted when done, i.e.:
 > tw python mtass2.py
+
+There are ASCII problems with some of the foreign words.
 """
 
 import sys
+import time
 
 # easy bools
 YES=True
 NO=False
 
-CONVERGE=5
+# Defaults
+CONVERGE=0 # Don't know what this should be
+PROGRESS_WIDTH=40 # width of the progress bar
 
 class EmAlg(object):
   def __init__(self, dicts):
@@ -35,9 +40,28 @@ class EmAlg(object):
     self.eng_words = []
     self.for_dict  = []
     self.for_words = []
+    self.sentence_pairs = [] # (english,foreign)
     
     self.possibilities = {} # list of possible initial translations of a word (using a set to remove dupes)
-    self.trans_probs   = [] 
+    self.trans_probs   = {} # t(e|f)
+    
+    self.count_ef = {} # count(e|f)
+    self.total_f  = {} # total(f)
+    self.total_s  = {} # s_total(e)
+    
+  # a simple progress bar just incase it all takes too long.
+  def _progress(self, prog):
+    sys.stdout.write("[%s] %i" % (" " * PROGRESS_WIDTH, prog))
+    sys.stdout.flush()
+    sys.stdout.write("\b" * (PROGRESS_WIDTH+1)) # return to start of line, after '['
+
+    for i in xrange(PROGRESS_WIDTH):
+        time.sleep(0.1) # do real work here
+        # update the bar
+        sys.stdout.write("-")
+        sys.stdout.flush()
+
+    sys.stdout.write("\n")
     
   # Loads a dictionary of sentences and creates a dict of words.
   def _loadDict(self, dic):
@@ -55,22 +79,43 @@ class EmAlg(object):
     
     return out_dict, out_words
   
+  # Builds a sentence pair list
+  def _sentencePairs(self):
+    pairs = []
+    for index in range(len(self.eng_dict)):
+      pair = (self.eng_dict[index], self.for_dict[index])
+      pairs.append(pair)
+    
+    self.sentence_pairs = pairs
+  
   # Initialises the options for the result of a word to be translated.
   def _initPossibilities(self):
     possibilities = {} # a dictionary for key-value pairs (the key is the foreign word)
+    #count_ef = {}
+    #total = {}
     
     # This is very slow.. and inefficient.. but it does the job
     for word in self.for_words:
       word_poss = []
+      
       for sent in self.for_dict:
         if word in sent:
           inSent = self.eng_dict[ self.for_dict.index(sent) ]
           word_poss = word_poss + inSent.split()
       word_poss = list( set(word_poss) )
       possibilities[word] = word_poss
+      
+      #count = [0 for w in word_poss]
+      #count_ef[word] = count
+      #total[word] = 0
+      
+      #self._progress()
     
     #print possibilities['buch']
+    #print count_ef['buch']
+    #print total['buch']
     self.possibilities = possibilities
+    #self.count_ef = count_ef
   
   # Initialises the translation probabilities uniformly.
   def _initUniformTEF(self):
@@ -85,24 +130,75 @@ class EmAlg(object):
     
     self.trans_probs = trans_probs
   
+  # sets the counts of words to zero
+  def _zeroCountEF(self):
+    count_ef = {}
+    total_f = {}
+    
+    for word in self.for_words:
+      word_poss = self.possibilities[word]
+      count_zeroed = dict( [(w, 0) for w in word_poss] )
+      count_ef[word] = count_zeroed
+      
+      total_f[word] = 0
+      
+    self.count_ef = count_ef
+    self.total_f = total_f
+    
   # Compute probabilities under a while loop
   def _converge(self):
     converged = NO
     cvgd = 0
     
+    #print self.trans_probs
+    
     while not(converged):
-      
       # Try to converge
+      self._zeroCountEF()
+      
+      for (e_s, f_s) in self.sentence_pairs:
+        e_s_split = e_s.split()
+        f_s_split = f_s.split()
+        
+        # pretty sure this step could be done elsewhere
+        for e in self.eng_words:
+          self.total_s[e] = 0
+        
+        for e in e_s_split:
+          for f in f_s_split:
+            f_probs = self.trans_probs[f]
+            self.total_s[e] += f_probs[e] # this is the probability of e given f
+        for e in e_s_split:
+          for f in f_s_split:
+            self.count_ef[f][e] += self.trans_probs[f][e] / self.total_s[e]
+            self.total_f[f] += self.trans_probs[f][e] / self.total_s[e]
+        
+        print self.total_f
+        return
+        for f in self.for_words:
+          f_poss = self.possibilities[f]
+          
+          for e in f_poss:
+            self.trans_probs[f][e] = self.count_ef[f][e] / self.total_f[f]
+          """
+          for e in self.eng_words:
+            # if the key is not in the list of possibilities then skip (?)
+            if (e in f):
+              self.trans_probs[f][e] = self.count_ef[f][e] / self.total_f[f]
+          """
       
       if (cvgd>=CONVERGE):
         converged = YES
       cvgd += 1
+      
     
   # Governs the entire translation process.
   def go(self):
     print ">>> Going.."
     self.eng_dict, self.eng_words = self._loadDict( self.dicts[1] )
     self.for_dict, self.for_words = self._loadDict( self.dicts[2] )
+    self._sentencePairs()
+    print self.sentence_pairs
     print ">>> Dictionaries loaded.."
     
     print ">>> Initialising probabilities.."
@@ -110,7 +206,8 @@ class EmAlg(object):
     print ">>> Initialising t(e|f) uniformly.."
     self._initUniformTEF()
     print ">>> Performing convergence loop.."
-    #self._converge()
+    self._converge()
+    
 
 # Just to make sure the dicts are actually there and in the right order
 def verifyArgs(args):
