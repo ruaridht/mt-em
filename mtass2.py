@@ -29,7 +29,7 @@ YES=True
 NO=False
 
 # Defaults
-CONVERGE=0 # Don't know what this should be
+CONVERGE=5 # Don't know what this should be
 PROGRESS_WIDTH=40 # width of the progress bar
 
 class EmAlg(object):
@@ -159,55 +159,59 @@ class EmAlg(object):
       for (e_s, f_s) in self.sentence_pairs:
         e_s_split = e_s.split()
         f_s_split = f_s.split()
-        
-        # pretty sure this step could be done elsewhere
+        """
         for e in self.eng_words:
           self.total_s[e] = 0
-        
+        """
         for e in e_s_split:
+          self.total_s[e] = 0
           for f in f_s_split:
             f_probs = self.trans_probs[f]
             self.total_s[e] += f_probs[e] # this is the probability of e given f
-        for e in e_s_split:
+          
           for f in f_s_split:
             self.count_ef[f][e] += self.trans_probs[f][e] / self.total_s[e]
             self.total_f[f] += self.trans_probs[f][e] / self.total_s[e]
-        
-        print self.total_f
-        return
-        for f in self.for_words:
-          f_poss = self.possibilities[f]
-          
-          for e in f_poss:
+      
+      for f in self.for_words:
+        f_poss = self.possibilities[f]
+        for e in f_poss:
+          self.trans_probs[f][e] = self.count_ef[f][e] / self.total_f[f]
+        """
+        for e in self.eng_words:
+          # if the key is not in the list of possibilities then skip (?)
+          if (e in f):
             self.trans_probs[f][e] = self.count_ef[f][e] / self.total_f[f]
-          """
-          for e in self.eng_words:
-            # if the key is not in the list of possibilities then skip (?)
-            if (e in f):
-              self.trans_probs[f][e] = self.count_ef[f][e] / self.total_f[f]
-          """
+        """
       
       if (cvgd>=CONVERGE):
         converged = YES
       cvgd += 1
-      
-    
+  
+  # Prints the translation probabilities
+  def _outputTEF(self):
+    for key in self.trans_probs:
+      print key, " : ", self.trans_probs[key]
+  
   # Governs the entire translation process.
   def go(self):
     print ">>> Going.."
     self.eng_dict, self.eng_words = self._loadDict( self.dicts[1] )
     self.for_dict, self.for_words = self._loadDict( self.dicts[2] )
     self._sentencePairs()
-    print self.sentence_pairs
+    
     print ">>> Dictionaries loaded.."
     
     print ">>> Initialising probabilities.."
     self._initPossibilities()
     print ">>> Initialising t(e|f) uniformly.."
     self._initUniformTEF()
+    
     print ">>> Performing convergence loop.."
     self._converge()
     
+    print ">>> Printing translation probabilities ..."
+    self._outputTEF()
 
 # Just to make sure the dicts are actually there and in the right order
 def verifyArgs(args):
