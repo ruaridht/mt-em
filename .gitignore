@@ -1,3 +1,6 @@
 .DS_Store
 europarl/*
 toy/*
+viterbi_align.txt
+trans_table.txt
+*.pyc

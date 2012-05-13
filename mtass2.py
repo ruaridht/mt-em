@@ -5,31 +5,26 @@ EM Algorithm for IBM Model 1
 Ruaridh Thomson s0786036
 
 Notes:
-This program outputs:
-1. A table (in the form of a matrix) containing the word translation probabilities that were learned
-2. The most likely alignment (Viterbi alignment) for each sentence pair in the training data.
+There may be ASCII problems with some of the foreign words.
+There are word possibility problems when punctuation is removed.
+Progress bar code is for sanity.
 
-For (1) there is a lot of data and a suitable data structure will need to be used (i.e. not a matrix).
-
-t(e|f) is the translation probability of getting 'e' given 'f'.
-First calculate the alignments using the alignment function.
-
-Self notes:
-Run using tw (or tweet) to be tweeted when done, i.e.:
-> tw python mtass2.py
-
-There are ASCII problems with some of the foreign words.
+Notes for self:
+> tw python mtass2.py toy.en toy.de
+> tw time python mtass2.py test2000.lowercase.en test2000.lowercase.de
 """
 
 import sys
 import time
+from progressbar import *
+import string
 
 # easy bools
 YES=True
 NO=False
 
 # Defaults
-CONVERGE=5 # Don't know what this should be
+CONVERGE=70 # Don't know what this should be
 PROGRESS_WIDTH=40 # width of the progress bar
 
 class EmAlg(object):
@@ -49,20 +44,6 @@ class EmAlg(object):
     self.total_f  = {} # total(f)
     self.total_s  = {} # s_total(e)
     
-  # a simple progress bar just incase it all takes too long.
-  def _progress(self, prog):
-    sys.stdout.write("[%s] %i" % (" " * PROGRESS_WIDTH, prog))
-    sys.stdout.flush()
-    sys.stdout.write("\b" * (PROGRESS_WIDTH+1)) # return to start of line, after '['
-
-    for i in xrange(PROGRESS_WIDTH):
-        time.sleep(0.1) # do real work here
-        # update the bar
-        sys.stdout.write("-")
-        sys.stdout.flush()
-
-    sys.stdout.write("\n")
-    
   # Loads a dictionary of sentences and creates a dict of words.
   def _loadDict(self, dic):
     out_dict  = []
@@ -70,13 +51,15 @@ class EmAlg(object):
     f = open(dic, 'r')
     
     for line in f.readlines():
+      #out = line.rstrip() # remove end of line chars
+      #outline = line.translate(string.maketrans("",""), string.punctuation) # remove punctuation?
+      #out_dict.append(outline)
       out_dict.append( line.rstrip() )
       out_words = out_words + line.split()
       
     f.close()
     
     out_words = list( set(out_words) ) # remove dupes
-    
     return out_dict, out_words
   
   # Builds a sentence pair list
@@ -91,8 +74,10 @@ class EmAlg(object):
   # Initialises the options for the result of a word to be translated.
   def _initPossibilities(self):
     possibilities = {} # a dictionary for key-value pairs (the key is the foreign word)
-    #count_ef = {}
-    #total = {}
+    
+    pbar = ProgressBar().start()
+    count = 1.0 # not an index
+    clen = len(self.for_words)
     
     # This is very slow.. and inefficient.. but it does the job
     for word in self.for_words:
@@ -102,20 +87,21 @@ class EmAlg(object):
         if word in sent:
           inSent = self.eng_dict[ self.for_dict.index(sent) ]
           word_poss = word_poss + inSent.split()
+          
       word_poss = list( set(word_poss) )
       possibilities[word] = word_poss
       
-      #count = [0 for w in word_poss]
-      #count_ef[word] = count
-      #total[word] = 0
-      
-      #self._progress()
+      percent_done = count / clen
+      percent_done = round(percent_done * 100)
+      pbar.update(percent_done)
+      count += 1.0
+    
+    pbar.finish()  
     
     #print possibilities['buch']
     #print count_ef['buch']
     #print total['buch']
     self.possibilities = possibilities
-    #self.count_ef = count_ef
   
   # Initialises the translation probabilities uniformly.
   def _initUniformTEF(self):
@@ -123,6 +109,8 @@ class EmAlg(object):
     
     for word in self.for_words:
       word_poss = self.possibilities[word]
+      if (len(word_poss)==0):
+        print word, word_poss
       uniform_prob = 1.0 / len(word_poss)
       
       word_probs = dict( [(w, uniform_prob) for w in word_poss] )
@@ -150,48 +138,68 @@ class EmAlg(object):
     converged = NO
     cvgd = 0
     
-    #print self.trans_probs
-    
     while not(converged):
+      pbar = ProgressBar().start()
+      pbcount = 1.0
+      pblen = len(self.sentence_pairs)
+      
       # Try to converge
       self._zeroCountEF()
       
       for (e_s, f_s) in self.sentence_pairs:
         e_s_split = e_s.split()
         f_s_split = f_s.split()
-        """
-        for e in self.eng_words:
-          self.total_s[e] = 0
-        """
+        
         for e in e_s_split:
           self.total_s[e] = 0
           for f in f_s_split:
             f_probs = self.trans_probs[f]
+            
+            if (e not in f_probs):
+              #punctuation problems, though if we remove punctuation we run into a load of new problems
+              continue
+            
             self.total_s[e] += f_probs[e] # this is the probability of e given f
           
           for f in f_s_split:
+            if (e not in self.trans_probs[f]):
+              continue
             self.count_ef[f][e] += self.trans_probs[f][e] / self.total_s[e]
             self.total_f[f] += self.trans_probs[f][e] / self.total_s[e]
+          
+        percent_done = pbcount / pblen
+        percent_done = round(percent_done * 100)
+        pbar.update(percent_done)
+        pbcount += 1.0
       
       for f in self.for_words:
         f_poss = self.possibilities[f]
         for e in f_poss:
           self.trans_probs[f][e] = self.count_ef[f][e] / self.total_f[f]
-        """
-        for e in self.eng_words:
-          # if the key is not in the list of possibilities then skip (?)
-          if (e in f):
-            self.trans_probs[f][e] = self.count_ef[f][e] / self.total_f[f]
-        """
       
       if (cvgd>=CONVERGE):
         converged = YES
       cvgd += 1
+      
+      pbar.finish()
+      print "    Loop", cvgd, "completed."
   
   # Prints the translation probabilities
   def _outputTEF(self):
-    for key in self.trans_probs:
-      print key, " : ", self.trans_probs[key]
+    f = open('trans_table.txt','w')
+    g = open ('viterbi_align.txt', 'w')
+    for word in self.trans_probs:
+      word_probs = self.trans_probs[word]
+      items = sorted(word_probs.iteritems(), key=lambda (k,v): (v,k))
+      items.reverse()
+      (top, va) = items[0]
+      g.write(word + " = " + top + "\n")
+      f.write(word + ":- ")
+      for (w, p) in items[:5]:
+        f.write("(" + w + ", " + str(p) + ")" + ", ")
+      f.write("\n")
+    f.close()
+    g.close()
   
   # Governs the entire translation process.
   def go(self):
@@ -199,17 +207,14 @@ class EmAlg(object):
     self.eng_dict, self.eng_words = self._loadDict( self.dicts[1] )
     self.for_dict, self.for_words = self._loadDict( self.dicts[2] )
     self._sentencePairs()
-    
     print ">>> Dictionaries loaded.."
     
     print ">>> Initialising probabilities.."
     self._initPossibilities()
     print ">>> Initialising t(e|f) uniformly.."
     self._initUniformTEF()
-    
     print ">>> Performing convergence loop.."
     self._converge()
-    
     print ">>> Printing translation probabilities ..."
     self._outputTEF()
 
